@@ -1,5 +1,3 @@
-//Дублирование кода устранено, конструкция вынесена в отдельный метод. Реализовать Emplaсeback через Emplace не удалось.
-
 #pragma once
 #include <cassert>
 #include <cstdlib>
@@ -188,13 +186,10 @@ template<typename T>
 inline Vector<T>& Vector<T>::operator=(const Vector& rhs) {
     if (this != &rhs) {
         if (rhs.size_ > data_.Capacity()) {
-            /* Применить copy-and-swap */
             Vector rhs_copy(rhs);
             Swap(rhs_copy);
         }
         else {
-            /* Скопировать элементы из rhs, создав при необходимости новые
-               или удалив существующие */
             if (rhs.size_ < size_) {
                 std::copy(rhs.data_.GetAddress(), rhs.data_.GetAddress() + rhs.size_, data_.GetAddress());
                 std::destroy_n(data_.GetAddress() + rhs.size_, size_ - rhs.size_);
@@ -283,11 +278,7 @@ inline void Vector<T>::Resize(size_t new_size) {
     size_ = new_size;
 }
 
-template<typename T>
-template<typename Type>
-inline void Vector<T>::PushBack(Type&& value) {
-    EmplaceBack(std::forward<Type>(value));
-}
+
 
 template<typename T>
 inline void Vector<T>::PopBack() {
@@ -297,34 +288,7 @@ inline void Vector<T>::PopBack() {
     }
 }
 
-template<typename T>
-template<typename ...Args>
-inline T& Vector<T>::EmplaceBack(Args && ...args) {
-    T* result = nullptr;
-    if (size_ == Capacity()) {
-        RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
-        result = new (new_data + size_) T(std::forward<Args>(args)...);
-        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-            std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
-        }
-        else {
-            try {
-                std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
-            }
-            catch (...) {
-                std::destroy_n(new_data.GetAddress() + size_, 1);
-                throw;
-            }
-        }
-        std::destroy_n(data_.GetAddress(), size_);
-        data_.Swap(new_data);
-    }
-    else {
-        result = new (data_ + size_) T(std::forward<Args>(args)...);
-    }
-    ++size_;
-    return *result;
-}
+
 
 template<typename T>
 typename Vector<T>::iterator Vector<T>::begin() noexcept {
@@ -367,48 +331,49 @@ typename Vector<T>::iterator Vector<T>::Emplace(const_iterator pos, Args&&... ar
         RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
         T* new_element = new (new_data + shift) T(std::forward<Args>(args)...);
         
-        if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-            std::uninitialized_move_n(begin(), shift, new_data.GetAddress());
-            std::uninitialized_move_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
-        } else {
-            try {
+        try {
+            if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+                std::uninitialized_move_n(begin(), shift, new_data.GetAddress());
+                std::uninitialized_move_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
+            } else {
                 std::uninitialized_copy_n(begin(), shift, new_data.GetAddress());
                 std::uninitialized_copy_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
-            } catch (...) {
-                std::destroy_at(new_element);
-                throw;
             }
+        } catch (...) {
+            std::destroy_at(new_element);
+            throw;
         }
         
         std::destroy_n(begin(), size_);
         data_.Swap(new_data);
-        ++size_;
-        return begin() + shift;
     } else {
         // Случай без перевыделения памяти
-        if (size_ != 0) {
-            // Создаем новый элемент в конце
-            new (data_ + size_) T(std::move(data_[size_ - 1]));
-            
-            // Если вставляем не в конец
-            if (shift != size_) {
-                // Создаем временный элемент на стеке
-                T temp(std::forward<Args>(args)...);
-                
-                // Сдвигаем элементы вправо
-                std::move_backward(begin() + shift, end() - 1, end());
-                
-                // Размещаем новый элемент
-                data_[shift] = std::move(temp);
-            }
-        } else {
-            // Вектор пустой - просто создаем элемент
+        if (shift == size_) {
+
             new (data_ + shift) T(std::forward<Args>(args)...);
+        } else {
+
+            T tmp(std::forward<Args>(args)...);
+            new (data_ + size_) T(std::move(data_[size_ - 1]));
+            std::move_backward(begin() + shift, end() - 1, end());
+            data_[shift] = std::move(tmp);
         }
-        
-        ++size_;
-        return begin() + shift;
     }
+    
+    ++size_;
+    return begin() + shift;
+}
+
+template<typename T>
+template<typename... Args>
+T& Vector<T>::EmplaceBack(Args&&... args) {
+    return *Emplace(end(), std::forward<Args>(args)...);
+}
+
+template<typename T>
+template<typename Type>
+void Vector<T>::PushBack(Type&& value) {
+    EmplaceBack(std::forward<Type>(value));
 }
 
 template<typename T>
@@ -427,5 +392,9 @@ typename Vector<T>::iterator Vector<T>::Insert(const_iterator pos, const T& valu
 
 template<typename T>
 typename Vector<T>::iterator Vector<T>::Insert(const_iterator pos, T&& value) {
+    if (pos >= begin() && pos < end() && &value >= begin() && &value < end()) {
+        T tmp = std::move(value);
+        return Emplace(pos, std::move(tmp));
+    }
     return Emplace(pos, std::move(value));
 }
