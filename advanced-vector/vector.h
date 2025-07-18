@@ -1,3 +1,5 @@
+//Дублирование кода устранено, конструкция вынесена в отдельный метод. Реализовать Emplaсeback через Emplace не удалось.
+
 #pragma once
 #include <cassert>
 #include <cstdlib>
@@ -28,8 +30,9 @@ public:
     size_t Capacity() const;
 
 private:
-    
+    // Выделяет сырую память под n элементов и возвращает указатель на неё
     static T* Allocate(size_t n);
+    // Освобождает сырую память, выделенную ранее по адресу buf при помощи Allocate
     static void Deallocate(T* buf) noexcept;
 
     T* buffer_ = nullptr;
@@ -58,7 +61,7 @@ public:
     const_iterator cend() const noexcept;
     template <typename... Args>
     iterator Emplace(const_iterator pos, Args&&... args);
-    iterator Erase(const_iterator pos);
+    iterator Erase(const_iterator pos) /*noexcept(std::is_nothrow_move_assignable_v<T>)*/;
     iterator Insert(const_iterator pos, const T& value);
     iterator Insert(const_iterator pos, T&& value);
 
@@ -71,7 +74,7 @@ public:
     void Resize(size_t new_size);
     template <typename Type>
     void PushBack(Type&& value);
-    void PopBack();
+    void PopBack() /* noexcept */;
     template <typename... Args>
     T& EmplaceBack(Args&&... args);
     
@@ -97,7 +100,7 @@ inline RawMemory<T>::RawMemory(RawMemory&& other) noexcept {
 template<typename T>
 inline RawMemory<T>& RawMemory<T>::operator=(RawMemory&& rhs) noexcept {
     if (this != &rhs) {
-        Deallocate(buffer_);  
+        Deallocate(buffer_);  // Free existing memory
         buffer_ = rhs.buffer_;
         capacity_ = rhs.capacity_;
         rhs.buffer_ = nullptr;
@@ -113,6 +116,7 @@ inline RawMemory<T>::~RawMemory() {
 
 template<typename T>
 inline T* RawMemory<T>::operator+(size_t offset) noexcept {
+    // Разрешается получать адрес ячейки памяти, следующей за последним элементом массива
     assert(offset <= capacity_);
     return buffer_ + offset;
 }
@@ -184,10 +188,13 @@ template<typename T>
 inline Vector<T>& Vector<T>::operator=(const Vector& rhs) {
     if (this != &rhs) {
         if (rhs.size_ > data_.Capacity()) {
+            /* Применить copy-and-swap */
             Vector rhs_copy(rhs);
             Swap(rhs_copy);
         }
         else {
+            /* Скопировать элементы из rhs, создав при необходимости новые
+               или удалив существующие */
             if (rhs.size_ < size_) {
                 std::copy(rhs.data_.GetAddress(), rhs.data_.GetAddress() + rhs.size_, data_.GetAddress());
                 std::destroy_n(data_.GetAddress() + rhs.size_, size_ - rhs.size_);
@@ -247,6 +254,7 @@ inline void Vector<T>::Reserve(size_t new_capacity) {
         return;
     }
     RawMemory<T> new_data(new_capacity);
+    // constexpr оператор if будет вычислен во время компиляции
     if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
         std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
     }
@@ -379,11 +387,18 @@ typename Vector<T>::iterator Vector<T>::Emplace(const_iterator pos, Args&&... ar
     } else {
         // Случай без перевыделения памяти
         if (size_ != 0) {
+            // Создаем новый элемент в конце
             new (data_ + size_) T(std::move(data_[size_ - 1]));
+            
+            // Если вставляем не в конец
             if (shift != size_) {
-
+                // Создаем временный элемент на стеке
                 T temp(std::forward<Args>(args)...);
+                
+                // Сдвигаем элементы вправо
                 std::move_backward(begin() + shift, end() - 1, end());
+                
+                // Размещаем новый элемент
                 data_[shift] = std::move(temp);
             }
         } else {

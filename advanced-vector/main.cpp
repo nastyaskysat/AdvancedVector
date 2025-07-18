@@ -7,6 +7,7 @@
 
 namespace {
 
+    // "Магическое" число, используемое для отслеживания живости объекта
     inline const uint32_t DEFAULT_COOKIE = 0xdeadbeef;
 
     struct TestObj {
@@ -35,20 +36,20 @@ namespace {
         }
 
         explicit Obj(int id)
-            : id(id)  
+            : id(id)  //
         {
             ++num_constructed_with_id;
         }
 
         Obj(int id, std::string name)
             : id(id)
-            , name(std::move(name)) 
+            , name(std::move(name))  //
         {
             ++num_constructed_with_id_and_name;
         }
 
         Obj(const Obj& other)
-            : id(other.id)  
+            : id(other.id)  //
         {
             if (other.throw_on_copy) {
                 throw std::runtime_error("Oops");
@@ -57,7 +58,7 @@ namespace {
         }
 
         Obj(Obj&& other) noexcept
-            : id(other.id)  
+            : id(other.id)  //
         {
             ++num_moved;
         }
@@ -184,6 +185,7 @@ void Test2() {
         catch (const std::runtime_error&) {
         }
         catch (...) {
+            // Unexpected error
             assert(false && "Unexpected exception");
         }
         assert(Obj::num_default_constructed == SIZE / 2 - 1);
@@ -201,6 +203,7 @@ void Test2() {
             assert(Obj::num_copied == SIZE / 2);
         }
         catch (...) {
+            // Unexpected error
             assert(false && "Unexpected exception");
         }
         assert(Obj::GetAliveObjectCount() == SIZE);
@@ -213,6 +216,7 @@ void Test2() {
             v.Reserve(SIZE * 2);
         }
         catch (...) {
+            // Unexpected error
             assert(false && "Unexpected exception");
         }
         assert(v.Capacity() == SIZE * 2);
@@ -355,6 +359,8 @@ void Test4() {
     {
         Vector<TestObj> v(1);
         assert(v.Size() == v.Capacity());
+        // Операция PushBack существующего элемента вектора должна быть безопасна
+        // даже при реаллокации памяти
         v.PushBack(v[0]);
         assert(v[0].IsAlive());
         assert(v[1].IsAlive());
@@ -362,6 +368,8 @@ void Test4() {
     {
         Vector<TestObj> v(1);
         assert(v.Size() == v.Capacity());
+        // Операция PushBack для перемещения существующего элемента вектора должна быть безопасна
+        // даже при реаллокации памяти
         v.PushBack(std::move(v[0]));
         assert(v[0].IsAlive());
         assert(v[1].IsAlive());
@@ -387,6 +395,8 @@ void Test5() {
     {
         Vector<TestObj> v(1);
         assert(v.Size() == v.Capacity());
+        // Операция EmplaceBack существующего элемента вектора должна быть безопасна
+        // даже при реаллокации памяти
         v.EmplaceBack(v[0]);
         assert(v[0].IsAlive());
         assert(v[1].IsAlive());
@@ -596,11 +606,11 @@ struct C {
 
 void Dump() {
     using namespace std;
-    cerr << "Def ctors: "sv << C::def_ctor              
-        << ", Copy ctors: "sv << C::copy_ctor          
-        << ", Move ctors: "sv << C::move_ctor          
-        << ", Copy assignments: "sv << C::copy_assign  
-        << ", Move assignments: "sv << C::move_assign  
+    cerr << "Def ctors: "sv << C::def_ctor              //
+        << ", Copy ctors: "sv << C::copy_ctor          //
+        << ", Move ctors: "sv << C::move_ctor          //
+        << ", Copy assignments: "sv << C::copy_assign  //
+        << ", Move assignments: "sv << C::move_assign  //
         << ", Dtors: "sv << C::dtor << endl;
 }
 
